@@ -1,0 +1,96 @@
+# In this directory, run the following command to build this builder.
+# $ gcloud builds submit . --config=cloudbuild.yaml
+
+timeout: 300s
+steps:
+  # Check project GCR for current available images.
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+    - '-c'
+    - |
+      gcloud container images list-tags gcr.io/$PROJECT_ID/hugo --format=json > gcrimagelist.json
+      gcloud container images list-tags gcr.io/$PROJECT_ID/frbtools --format=json > gcrfrbimglist.json
+    id: 'check-images'
+
+  # Run 'update.py' to check current Hugo version and update 'Dockerfile.hugo-xtnd' accordingly.
+  - name: 'python:3.7'
+    entrypoint: 'bash'
+    args:
+    - '-c'
+    - |
+      python --version
+      git config --global user.email "[YOUR_EMAIL]"
+      git config --global user.name "[YOUR_NAME]"
+      pip3 install requests gitpython
+      python ./update.py
+    id: 'update'
+
+  # Update the actual Google Cloud Sources repo
+  - name: 'gcr.io/cloud-builders/git'
+    args:
+    - 'push'
+    - '-f'
+    - 'https://source.developers.google.com/p/$PROJECT_ID/r/$REPO_NAME'
+    - 'master'
+    - '--follow-tags'
+    id: 'sources-update'
+
+  # Build hugo extended most current version and tag accordingly
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+    - './imgbuilder.bash'
+    env:
+    - 'PROJECT=$PROJECT_ID'
+    - 'VRSNFILE=buildhugo.txt'
+    - 'IMGNAME=hugo'
+    - 'DCRFILE=Dockerfile-hugo-xtnd'
+    - 'SEARCHSTR="ENV HUGO_VERSION"'
+
+  # Test if an image build with current hugo extended works
+  - name: 'gcr.io/$PROJECT_ID/hugo'
+    args: ['--help']
+    id: 'test'
+
+  # Build Firebase tools most current version and tag accordingly
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+    - './imgbuilder.bash'
+    env:
+    - 'PROJECT=$PROJECT_ID'
+    - 'VRSNFILE=buildfrtls.txt'
+    - 'IMGNAME=frbtools'
+    - 'DCRFILE=Dockerfile-firebase'
+    - 'SEARCHSTR="ENV FRBTOOLS_VERSION"'
+    waitFor: ['sources-update']
+
+  # Build site
+  # All available Hugo versions are listed here: gcr.io/$PROJECT_ID/hugo (private)
+  - name: 'gcr.io/$PROJECT_ID/hugo'
+    id: 'site-builder'
+    waitFor: ['test']
+
+  # Check if the site is built
+  - name: busybox
+    args: ['cat', 'public/index.xml']
+
+  # Deploy to Firebase hosting
+  - name: 'gcr.io/$PROJECT_ID/frbtools'
+    args:
+    - '--project'
+    - '[YOUR_PROJECT_ID]'
+    - '--non-interactive'
+    - 'deploy'
+    - '--only'
+    - 'hosting'
+    - '--message'
+    - 'Build $BUILD_ID, repo $REPO_NAME, sha1 $COMMIT_SHA, ref $BRANCH_NAME'
+    secretEnv: ['FIREBASE_TOKEN']
+
+# Decrypt encrypted FIREBASE_TOKEN using key 'firebase-token' from keyring 'cloudbuilder'
+secrets:
+- kmsKeyName: 'projects/[YOUR_PROJECT_ID]/locations/global/keyRings/cloudbuilder/cryptoKeys/firebase-token'
+  secretEnv:
+    FIREBASE_TOKEN: '[YOUR_ENCRYPTED_FIREBASE_TOKEN]'

@@ -1,0 +1,15 @@
+FROM alpine:latest AS builder
+MAINTAINER example@email.com
+
+ENV HUGO_VERSION 0.49.2
+ENV HUGO_SHA be6db985d1daf3494d317a3a7f9d30a43094d46c9a90c78724602d2ac0771c0f
+
+# Install HUGO
+RUN wget -O ${HUGO_VERSION}.tar.gz https://github.com/spf13/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_Linux-64bit.tar.gz && \
+  echo "${HUGO_SHA}  ${HUGO_VERSION}.tar.gz" | sha256sum -c && \
+  tar xf ${HUGO_VERSION}.tar.gz
+
+# Based on: https://github.com/GoogleCloudPlatform/cloud-builders-community/blob/master/hugo/Dockerfile
+FROM gcr.io/distroless/cc
+COPY --from=builder /hugo* /
+ENTRYPOINT ["/hugo"]
