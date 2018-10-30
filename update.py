@@ -55,7 +55,7 @@ def compare_version_tags(jsondata, latest_tag, imgname):
     for image in jsondata:
         if image['tags']:
             for tag in image['tags']:
-                if compare_versions(tag, latest_tag):
+                if (tag != 'latest') and compare_versions(tag, latest_tag):
                     print(f'{imgname} image already up to date, nothing to do.')
                     return False
     print(f'GCR contains image(s) for an older {imgname} version.\nUpdating...')

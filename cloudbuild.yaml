@@ -53,6 +53,15 @@ steps:
     args: ['--help']
     id: 'test'
 
+  # Build site
+  # All available Hugo versions are listed here: gcr.io/$PROJECT_ID/hugo (private)
+  - name: 'gcr.io/$PROJECT_ID/hugo'
+    id: 'site-builder'
+
+  # Check if the site is built
+  - name: busybox
+    args: ['cat', 'public/index.xml']
+
   # Build Firebase tools most current version and tag accordingly
   - name: 'gcr.io/cloud-builders/docker'
     entrypoint: 'bash'
@@ -64,17 +73,15 @@ steps:
     - 'IMGNAME=frbtools'
     - 'DCRFILE=Dockerfile-firebase'
     - 'SEARCHSTR="ENV FRBTOOLS_VERSION"'
+    id: 'frbtools-image'
     waitFor: ['sources-update']
 
-  # Build site
-  # All available Hugo versions are listed here: gcr.io/$PROJECT_ID/hugo (private)
-  - name: 'gcr.io/$PROJECT_ID/hugo'
-    id: 'site-builder'
-    waitFor: ['test']
-
-  # Check if the site is built
-  - name: busybox
-    args: ['cat', 'public/index.xml']
+  # Test Firebase tools
+  - name: 'gcr.io/$PROJECT_ID/frbtools'
+    args:
+    - 'list'
+    secretEnv: ['FIREBASE_TOKEN']
+    waitFor: ['frbtools-image', 'test']
 
   # Deploy to Firebase hosting
   - name: 'gcr.io/$PROJECT_ID/frbtools'
